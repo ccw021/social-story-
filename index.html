@@ -19,12 +19,13 @@
             position: absolute; top: 10px; left: 10px; right: 10px;
             display: flex; justify-content: space-between; pointer-events: none;
             color: white; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px #000;
+            z-index: 50;
         }
         .status-box { background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 10px; border: 2px solid #fff; }
         
         #dpad {
             position: absolute; bottom: 30px; right: 30px;
-            width: 180px; height: 180px; pointer-events: auto; display: none;
+            width: 180px; height: 180px; pointer-events: auto; display: none; z-index: 50;
         }
         .dbtn {
             position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.7);
@@ -65,7 +66,7 @@
         .option-label.selected { border-color: #3498db; background: #e8f6ff; font-weight: bold; }
         #confirm-btn { background: #2ecc71; width: 100%; margin-top: 20px; }
         #confirm-btn:hover { background: #27ae60; }
-        #feedback-text { margin-top: 15px; font-size: 20px; font-weight: bold; color: #f1c40f; text-align: center; }
+        #feedback-text { margin-top: 15px; font-size: 20px; font-weight: bold; color: #f1c40f; text-align: center; white-space: pre-line;}
     </style>
 </head>
 <body>
@@ -89,7 +90,7 @@
         <div class="panel">
             <h1>🛡️ 校園保衛戰</h1>
             <p>糟糕了！學校被「無禮月球怪獸」入侵，<br>校園被黑暗吞噬，一片混亂！</p>
-            <p>勇敢的騎士，請移動靠近怪獸。<br>觸碰怪獸並選擇正確的社交方式，揮劍擊退牠們！</p>
+            <p>勇敢的裝甲騎士，請移動靠近怪獸。<br>觸碰怪獸並選擇正確的社交方式，揮劍擊退牠們！</p>
             <button onclick="startGame()">開始拯救學校</button>
         </div>
     </div>
@@ -163,12 +164,12 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     
-    let gameState = 'start'; // start, playing, dialog, animating, end
+    let gameState = 'init'; // init, start, playing, dialog, animating, end
     let hp = 3; let score = 0; let totalMonsters = 5;
     let monsters = []; let currentMonsterIndex = -1; let selectedOptionIndex = -1;
     
     // 動畫狀態管理
-    let animTimer = 0; let animMax = 60; // 60幀約1秒
+    let animTimer = 0; let animMax = 45; // 縮短動畫時間讓節奏更明快
     let animType = ''; // 'playerAttack', 'monsterAttack'
 
     const keys = { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowLeft:false, ArrowDown:false, ArrowRight:false };
@@ -185,6 +186,10 @@
     };
     setupDpad('up', 'ArrowUp'); setupDpad('down', 'ArrowDown'); setupDpad('left', 'ArrowLeft'); setupDpad('right', 'ArrowRight');
 
+    // 初始化時先畫出背景，避免一開始黑畫面
+    drawSchool(5);
+    drawKnight(player.x, player.y, player.facingRight);
+
     function startGame() {
         document.getElementById('start-screen').classList.add('hidden');
         document.getElementById('ui-layer').classList.remove('hidden');
@@ -192,13 +197,20 @@
         
         monsters = [];
         for(let i=0; i<totalMonsters; i++) {
+            let mx, my;
+            // 防護機制：確保怪獸不會生成在騎士周圍 150 像素內
+            do {
+                mx = 160 + Math.random() * 880; // 限制在操場範圍內
+                my = 310 + Math.random() * 380;
+            } while (Math.abs(mx - player.x) < 150 && Math.abs(my - player.y) < 150);
+
             monsters.push({
-                x: 100 + Math.random() * 1000, y: 300 + Math.random() * 400,
-                size: 35, active: true, qIndex: Math.floor(Math.random() * questions.length)
+                x: mx, y: my, size: 35, active: true, qIndex: Math.floor(Math.random() * questions.length)
             });
         }
         hp = 3; score = 0; updateUI();
-        gameState = 'playing'; gameLoop();
+        gameState = 'playing'; 
+        gameLoop(); // 正式啟動常駐迴圈
     }
 
     function updateUI() {
@@ -225,7 +237,7 @@
         }
     }
 
-    // --- 繪製校園場景 ---
+    // --- 繪製精美校園場景 ---
     function drawSchool(remaining) {
         // 天空與草地底色
         ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, canvas.width, 250);
@@ -240,11 +252,15 @@
         ctx.strokeStyle = '#333'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(600, 100, 30, 0, Math.PI*2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(600, 100); ctx.lineTo(600, 80); ctx.moveTo(600, 100); ctx.lineTo(615, 100); ctx.stroke();
 
-        // 窗戶
+        // 窗戶 (透出燈光)
         ctx.fillStyle = '#FFFACD';
         for(let x=250; x<=850; x+=150) {
-            if(x===550) continue; // 避開時鐘塔下方的大門
+            if(x===550) continue; 
             ctx.fillRect(x, 100, 60, 50); ctx.fillRect(x, 170, 60, 50);
+            ctx.strokeStyle = '#B8860B'; ctx.lineWidth = 2;
+            ctx.strokeRect(x, 100, 60, 50); ctx.strokeRect(x, 170, 60, 50);
+            ctx.beginPath(); ctx.moveTo(x+30, 100); ctx.lineTo(x+30, 150); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x+30, 170); ctx.lineTo(x+30, 220); ctx.stroke();
         }
         // 學校大門
         ctx.fillStyle = '#8B4513'; ctx.fillRect(550, 150, 100, 100);
@@ -255,49 +271,51 @@
         ctx.beginPath(); ctx.moveTo(600, 300); ctx.lineTo(600, 700); ctx.stroke(); // 中線
         ctx.beginPath(); ctx.arc(600, 500, 80, 0, Math.PI*2); ctx.stroke(); // 中圈
 
-        // 黑暗濾鏡 (根據怪獸數量)
+        // 黑暗濾鏡 (根據怪獸數量減少而變亮)
         if(remaining > 0) {
             ctx.fillStyle = `rgba(10, 10, 30, ${0.1 + remaining * 0.15})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
 
-    // --- 繪製精美騎士 ---
+    // --- 繪製精美裝甲騎士 ---
     function drawKnight(x, y, facingRight) {
         ctx.save(); ctx.translate(x, y);
-        if(!facingRight) ctx.scale(-1, 1);
+        if(!facingRight) ctx.scale(-1, 1); // 轉向
 
-        // 盾牌 (左手/背面)
+        // 盾牌 (左手)
         ctx.fillStyle = '#2980b9';
         ctx.beginPath(); ctx.moveTo(5, -10); ctx.lineTo(25, -10); ctx.lineTo(25, 15);
         ctx.arcTo(15, 30, 5, 15, 15); ctx.fill();
         ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#f1c40f'; ctx.fillRect(13, -5, 4, 20); ctx.fillRect(7, 3, 16, 4); // 十字架
+        ctx.fillStyle = '#f1c40f'; ctx.fillRect(13, -5, 4, 20); ctx.fillRect(7, 3, 16, 4); // 盾牌十字
 
         // 盔甲身體
-        ctx.fillStyle = '#95a5a6';
-        ctx.fillRect(-15, -10, 30, 35);
+        ctx.fillStyle = '#95a5a6'; ctx.fillRect(-15, -10, 30, 35);
         ctx.fillStyle = '#7f8c8d'; ctx.fillRect(-15, 20, 30, 5); // 腰帶
 
         // 腿部
-        ctx.fillStyle = '#7f8c8d';
-        ctx.fillRect(-10, 25, 8, 15); ctx.fillRect(2, 25, 8, 15);
+        ctx.fillStyle = '#7f8c8d'; ctx.fillRect(-10, 25, 8, 15); ctx.fillRect(2, 25, 8, 15);
 
-        // 頭盔
+        // 鋼鐵頭盔
         ctx.fillStyle = '#bdc3c7';
         ctx.beginPath(); ctx.arc(0, -20, 18, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#e74c3c'; // 紅纓
+        ctx.fillStyle = '#e74c3c'; // 紅色盔纓
         ctx.beginPath(); ctx.moveTo(-5, -38); ctx.quadraticCurveTo(-20, -50, -30, -30); ctx.lineTo(-10, -30); ctx.fill();
-        // 面罩
-        ctx.fillStyle = '#2c3e50';
-        ctx.fillRect(0, -25, 15, 6); ctx.fillRect(0, -17, 12, 4);
+        // 面罩眼睛
+        ctx.fillStyle = '#2c3e50'; ctx.fillRect(0, -25, 15, 6); ctx.fillRect(0, -17, 12, 4);
 
-        // 長劍 (右手/前面)
+        // 騎士長劍 (右手)
         ctx.save();
-        ctx.translate(-5, 5); ctx.rotate(Math.PI / 4);
+        // 如果正在播放攻擊動畫，讓劍揮舞起來
+        if(gameState === 'animating' && animType === 'playerAttack') {
+            ctx.translate(-5, 5); ctx.rotate(Math.PI / 4 + (animTimer * 0.1));
+        } else {
+            ctx.translate(-5, 5); ctx.rotate(Math.PI / 4);
+        }
         ctx.fillStyle = '#f1c40f'; ctx.fillRect(-4, -15, 8, 5); // 護手
-        ctx.fillStyle = '#bdc3c7'; ctx.fillRect(-2, -50, 4, 35); // 劍刃
-        ctx.beginPath(); ctx.moveTo(-2, -50); ctx.lineTo(0, -60); ctx.lineTo(2, -50); ctx.fill(); // 劍尖
+        ctx.fillStyle = '#ecf0f1'; ctx.fillRect(-2, -50, 4, 35); // 銀色劍刃
+        ctx.beginPath(); ctx.moveTo(-2, -50); ctx.lineTo(0, -60); ctx.lineTo(2, -50); ctx.fill(); // 尖端
         ctx.restore();
 
         ctx.restore();
@@ -321,8 +339,7 @@
             // 凶猛表情
             ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-10, -5, 5, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.arc(10, -5, 5, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(-10, -5, 2, 0, Math.PI*2); ctx.fill(); // 紅眼珠
-            ctx.beginPath(); ctx.arc(10, -5, 2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(-10, -5, 2, 0, Math.PI*2); ctx.fill(); 
 
             ctx.lineWidth = 3; ctx.strokeStyle = '#000';
             ctx.beginPath(); ctx.moveTo(-20, -15); ctx.lineTo(-5, -8); ctx.stroke(); // 倒八眉
@@ -339,13 +356,14 @@
     }
 
     function checkCollisions() {
-        if(gameState !== 'playing') return;
         for(let i=0; i<monsters.length; i++) {
             let m = monsters[i];
             if(m.active) {
                 let dx = player.x - m.x; let dy = player.y - m.y;
                 if(Math.sqrt(dx*dx + dy*dy) < player.size + m.size) {
-                    triggerQuestion(i); break;
+                    // 發生碰撞，暫停移動並觸發對話
+                    triggerQuestion(i); 
+                    break;
                 }
             }
         }
@@ -356,8 +374,11 @@
         gameState = 'dialog';
         currentMonsterIndex = index; selectedOptionIndex = -1;
         
-        // 確保玩家面向怪獸
+        // 確保騎士面向怪獸
         player.facingRight = (monsters[index].x > player.x);
+        
+        // 將玩家稍微推開一點點，避免關閉視窗後立刻又碰撞
+        player.x += player.facingRight ? -10 : 10;
 
         const qData = questions[monsters[index].qIndex];
         document.getElementById('dialog-screen').classList.remove('hidden');
@@ -394,10 +415,11 @@
             animType = 'monsterAttack';
         }
 
+        // 顯示回饋 2.5 秒後關閉視窗，開始播放戰鬥動畫
         setTimeout(() => {
             document.getElementById('dialog-screen').classList.add('hidden');
-            startAnimation(); // 關閉對話框後開始播放動畫
-        }, 3000);
+            startAnimation(); 
+        }, 2500);
     }
 
     // --- 戰鬥動畫系統 ---
@@ -411,68 +433,77 @@
     function drawCombatAnimation() {
         const target = monsters[currentMonsterIndex];
         
-        // 攻擊動畫 (玩家揮劍)
+        // 攻擊動畫 (玩家發射劍氣)
         if(animType === 'playerAttack') {
-            // 劍氣特效
             ctx.save();
             ctx.translate(target.x, target.y);
-            let radius = animTimer * 2;
-            ctx.strokeStyle = `rgba(241, 196, 15, ${1 - animTimer/animMax})`;
-            ctx.lineWidth = 15;
+            let radius = animTimer * 2.5; // 劍氣擴散
+            ctx.strokeStyle = `rgba(241, 196, 15, ${1 - animTimer/animMax})`; // 金色劍氣漸隱
+            ctx.lineWidth = 20;
             ctx.beginPath();
-            ctx.arc(0, 0, radius, -Math.PI/4, Math.PI/1.5);
+            ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
             ctx.stroke();
             ctx.restore();
-
-            // 騎士衝刺假象
-            player.x += (player.facingRight ? 1 : -1) * 2;
         } 
-        // 受傷動畫 (怪獸咬人)
+        // 受傷動畫 (怪獸爪擊)
         else if(animType === 'monsterAttack') {
-            // 畫面紅光
-            ctx.fillStyle = `rgba(231, 76, 60, ${0.5 * Math.sin(animTimer/3)})`;
+            // 畫面閃紅光
+            ctx.fillStyle = `rgba(231, 76, 60, ${0.4 * Math.sin(animTimer/3)})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // 爪痕特效
+            // 巨大的紅色爪痕
             ctx.strokeStyle = `rgba(192, 57, 43, ${1 - animTimer/animMax})`;
-            ctx.lineWidth = 10;
+            ctx.lineWidth = 15;
+            ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(player.x - 30 + animTimer, player.y - 30 + animTimer);
-            ctx.lineTo(player.x + 10 + animTimer, player.y + 10 + animTimer);
-            ctx.moveTo(player.x - 10 + animTimer, player.y - 30 + animTimer);
-            ctx.lineTo(player.x + 30 + animTimer, player.y + 10 + animTimer);
+            ctx.moveTo(player.x - 40 + animTimer*2, player.y - 40 + animTimer*2);
+            ctx.lineTo(player.x + 20 + animTimer*2, player.y + 20 + animTimer*2);
+            ctx.moveTo(player.x - 20 + animTimer*2, player.y - 40 + animTimer*2);
+            ctx.lineTo(player.x + 40 + animTimer*2, player.y + 20 + animTimer*2);
             ctx.stroke();
         }
 
         animTimer++;
         if(animTimer >= animMax) {
-            // 動畫結束，結算分數與狀態
+            // 動畫結束，結算分數
             if(animType === 'playerAttack') {
                 target.active = false; score++;
             } else {
-                hp--; target.x -= (player.facingRight ? -50 : 50); // 彈開怪獸防止連擊
+                hp--; 
+                // 將怪獸彈開一段距離，防止連續觸發受傷
+                target.x += (player.facingRight ? 80 : -80); 
             }
             updateUI();
             if(gameState !== 'end') gameState = 'playing';
         }
     }
 
-    // --- 主遊戲迴圈 ---
+    // --- 常駐主遊戲迴圈 (Always-on Rendering) ---
     function gameLoop() {
-        if(gameState === 'end' || gameState === 'dialog') return;
-
         let shakeX = 0, shakeY = 0;
         
-        // 處理動畫期間的畫面震動
+        // 處理受傷時的畫面強烈震動
         if(gameState === 'animating' && animType === 'monsterAttack') {
-            shakeX = (Math.random() - 0.5) * 15; shakeY = (Math.random() - 0.5) * 15;
+            shakeX = (Math.random() - 0.5) * 20; shakeY = (Math.random() - 0.5) * 20;
         }
 
         ctx.save();
         ctx.translate(shakeX, shakeY);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 玩家移動 (僅在遊玩狀態允許)
+        // 1. 無論什麼狀態，都必須畫出背景、怪獸和騎士
+        drawSchool(monsters.filter(m => m.active).length);
+        drawMonsters();
+        drawKnight(player.x, player.y, player.facingRight);
+        
+        // 2. 如果正在播放動畫，畫出特效
+        if(gameState === 'animating') {
+            drawCombatAnimation();
+        }
+
+        ctx.restore();
+
+        // 3. 只有在 'playing' 狀態下才允許移動和偵測碰撞
         if(gameState === 'playing') {
             if(keys.w || keys.ArrowUp) player.y -= player.speed;
             if(keys.s || keys.ArrowDown) player.y += player.speed;
@@ -482,21 +513,12 @@
             // 限制邊界在操場內
             player.x = Math.max(160, Math.min(1040, player.x));
             player.y = Math.max(310, Math.min(690, player.y));
+            
             checkCollisions();
         }
 
-        drawSchool(monsters.filter(m => m.active).length);
-        drawMonsters();
-        drawKnight(player.x, player.y, player.facingRight);
-        
-        // 繪製頂層動畫
-        if(gameState === 'animating') drawCombatAnimation();
-
-        ctx.restore();
-
-        if(gameState !== 'end' && gameState !== 'dialog') {
-            requestAnimationFrame(gameLoop);
-        }
+        // 不斷呼叫自己，保持引擎運作
+        requestAnimationFrame(gameLoop);
     }
 </script>
 </body>
