@@ -75,8 +75,8 @@
     <canvas id="gameCanvas" width="1200" height="800"></canvas>
     
     <div id="ui-layer" class="hidden">
-        <div class="status-box">騎士 HP: <span id="hp-display">❤️❤️❤️</span></div>
-        <div class="status-box">剩餘怪獸: <span id="monster-display">5</span> / 已消滅: <span id="score-display">0</span></div>
+        <div class="status-box">騎士 HP: <span id="hp-display">❤️❤️❤️❤️❤️</span></div>
+        <div class="status-box">剩餘怪獸: <span id="monster-display">10</span> / 已拯救人員: <span id="score-display">0</span></div>
     </div>
 
     <div id="dpad" class="hidden">
@@ -89,8 +89,8 @@
     <div id="start-screen" class="overlay">
         <div class="panel">
             <h1>🛡️ 校園保衛戰</h1>
-            <p>糟糕了！學校被「無禮月球怪獸」入侵，<br>校園被黑暗吞噬，一片混亂！</p>
-            <p>勇敢的裝甲騎士，請移動靠近怪獸。<br>觸碰怪獸並選擇正確的社交方式，揮劍擊退牠們！</p>
+            <p>糟糕了！學校被「無禮月球怪獸」入侵，<br>老師和同學們都很害怕，校園一片混亂！</p>
+            <p>勇敢的裝甲騎士，請移動靠近怪獸。<br>觸碰怪獸並選擇正確的社交方式，拯救大家吧！</p>
             <button onclick="startGame()">開始拯救學校</button>
         </div>
     </div>
@@ -143,10 +143,19 @@
             gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
             osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        } else if(type === 'victory') {
+            // 勝利歡呼音效
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.2);
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.4);
+            gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.8);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.8);
         }
     }
 
-    // --- 題庫 ---
+    // --- 題庫 (共10題) ---
     const questions = [
         { q: "小息時，同學不小心在走廊撞到你。", options: ["生氣地大力推開他。", "深呼吸，平靜地跟他說：「請小心。」"], answer: 1, feedback: "別人不小心時，平靜表達能避免衝突。" },
         { q: "你看到同學在玩積木，你也想加入他們。", options: ["直接衝過去把積木搶過來玩。", "站在旁邊，有禮貌地問：「我可以和你們一起玩嗎？」", "在旁邊大哭，直到他們把積木給你。"], answer: 1, feedback: "先詢問別人的意願，是加入遊戲的最佳方法。" },
@@ -165,15 +174,26 @@
     const ctx = canvas.getContext('2d');
     
     let gameState = 'init'; // init, start, playing, dialog, animating, end
-    let hp = 3; let score = 0; let totalMonsters = 5;
+    let hp = 5; let score = 0; let totalMonsters = 10;
     let monsters = []; let currentMonsterIndex = -1; let selectedOptionIndex = -1;
+    let frameCount = 0;
     
     // 動畫狀態管理
-    let animTimer = 0; let animMax = 45; // 縮短動畫時間讓節奏更明快
-    let animType = ''; // 'playerAttack', 'monsterAttack'
+    let animTimer = 0; let animMax = 45; 
+    let animType = ''; 
 
     const keys = { w:false, a:false, s:false, d:false, ArrowUp:false, ArrowLeft:false, ArrowDown:false, ArrowRight:false };
     const player = { x: 600, y: 500, size: 30, speed: 6, facingRight: true };
+
+    // 學校人員 (NPCs) 設定
+    const npcs = [
+        {x: 250, y: 380, type: 'teacher'},
+        {x: 900, y: 350, type: 'girl'},
+        {x: 350, y: 550, type: 'boy'},
+        {x: 850, y: 600, type: 'teacher'},
+        {x: 750, y: 450, type: 'boy'},
+        {x: 450, y: 400, type: 'girl'}
+    ];
 
     window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
     window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
@@ -186,8 +206,9 @@
     };
     setupDpad('up', 'ArrowUp'); setupDpad('down', 'ArrowDown'); setupDpad('left', 'ArrowLeft'); setupDpad('right', 'ArrowRight');
 
-    // 初始化時先畫出背景，避免一開始黑畫面
-    drawSchool(5);
+    // 初始化背景
+    drawSchool(10);
+    drawNPCs(true);
     drawKnight(player.x, player.y, player.facingRight);
 
     function startGame() {
@@ -196,31 +217,33 @@
         document.getElementById('dpad').classList.remove('hidden');
         
         monsters = [];
+        
+        // 題目洗牌機制 (確保每隻怪獸題目都不重複)
+        let qIndices = Array.from({length: questions.length}, (_, i) => i);
+        qIndices.sort(() => Math.random() - 0.5);
+
         for(let i=0; i<totalMonsters; i++) {
             let mx, my;
-            // 防護機制：確保怪獸不會生成在騎士周圍 150 像素內
             do {
-                mx = 160 + Math.random() * 880; // 限制在操場範圍內
+                mx = 160 + Math.random() * 880;
                 my = 310 + Math.random() * 380;
-            } while (Math.abs(mx - player.x) < 150 && Math.abs(my - player.y) < 150);
+            } while (Math.abs(mx - player.x) < 120 && Math.abs(my - player.y) < 120); // 確保不生在玩家頭上
 
             monsters.push({
-                x: mx, y: my, size: 35, active: true, qIndex: Math.floor(Math.random() * questions.length)
+                x: mx, y: my, size: 35, active: true, qIndex: qIndices[i] // 派發不重複的題目
             });
         }
-        hp = 3; score = 0; updateUI();
+        hp = 5; score = 0; updateUI();
         gameState = 'playing'; 
-        gameLoop(); // 正式啟動常駐迴圈
+        gameLoop(); 
     }
 
     function updateUI() {
-        document.getElementById('hp-display').innerText = '❤️'.repeat(hp);
+        // 只負責更新文字顯示，不再處理遊戲結束邏輯，確保不會覆蓋動畫狀態
+        document.getElementById('hp-display').innerText = '❤️'.repeat(Math.max(0, hp));
         const remaining = monsters.filter(m => m.active).length;
         document.getElementById('monster-display').innerText = remaining;
         document.getElementById('score-display').innerText = score;
-
-        if (remaining === 0 && gameState !== 'animating') endGame(true);
-        else if (hp <= 0 && gameState !== 'animating') endGame(false);
     }
 
     function endGame(isVictory) {
@@ -228,31 +251,103 @@
         document.getElementById('end-screen').classList.remove('hidden');
         const title = document.getElementById('end-title');
         const desc = document.getElementById('end-desc');
+        
         if(isVictory) {
+            playSound('victory');
             title.innerText = "🎉 任務完成！"; title.style.color = "#2ecc71";
-            desc.innerHTML = "太棒了！你用正確的社交技巧擊退了所有怪獸！<br>校園恢復了美麗與寧靜，大家都在為你歡呼拍掌！👏";
+            desc.innerHTML = "太棒了！你用正確的社交技巧擊退了全部 10 隻怪獸！<br>校園恢復了美麗與寧靜，老師和同學們都在為你歡呼拍掌！👏";
         } else {
             title.innerText = "💔 任務失敗"; title.style.color = "#e74c3c";
             desc.innerHTML = "你的 HP 歸零了... 學校被月球怪獸吞沒了。<br>不要灰心，休息一下，我們再次挑戰！";
         }
     }
 
+    // --- 繪製學校人員 (NPCs) ---
+    function drawNPCs(isScared) {
+        npcs.forEach(npc => {
+            ctx.save(); ctx.translate(npc.x, npc.y);
+            
+            // 地板陰影
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath(); ctx.ellipse(0, 5, 15, 5, 0, 0, Math.PI*2); ctx.fill();
+
+            // 頭部
+            ctx.fillStyle = '#f1c27d';
+            ctx.beginPath(); ctx.arc(0, -30, 12, 0, Math.PI*2); ctx.fill();
+
+            // 頭髮與細節
+            if(npc.type === 'teacher') {
+                ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(0, -32, 12, Math.PI, 0); ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+                ctx.strokeRect(-6, -32, 5, 3); ctx.strokeRect(1, -32, 5, 3); // 眼鏡
+            } else if(npc.type === 'girl') {
+                ctx.fillStyle = '#8e44ad'; ctx.beginPath(); ctx.arc(0, -32, 12, Math.PI, 0); ctx.fill();
+                ctx.fillRect(-14, -30, 6, 15); ctx.fillRect(8, -30, 6, 15); // 孖辮
+            } else { 
+                ctx.fillStyle = '#d35400'; ctx.beginPath(); ctx.arc(0, -34, 10, Math.PI, 0); ctx.fill(); // 男孩短髮
+            }
+
+            // 身體衣服
+            if(npc.type === 'teacher') { 
+                ctx.fillStyle = '#2c3e50'; ctx.fillRect(-10, -18, 20, 25); 
+            } else if(npc.type === 'girl') { 
+                ctx.fillStyle = '#e84393'; 
+                ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(-15, 10); ctx.lineTo(15, 10); ctx.fill(); 
+            } else { 
+                ctx.fillStyle = '#f1c40f'; ctx.fillRect(-9, -18, 18, 20); // 衣服
+                ctx.fillStyle = '#3498db'; ctx.fillRect(-9, 2, 18, 10); // 褲子
+            }
+
+            // 表情與手臂動作
+            ctx.fillStyle = '#000';
+            if(isScared) {
+                // 害怕發抖動畫
+                ctx.translate((Math.random()-0.5)*3, 0);
+                
+                // 害怕的眼睛和嘴巴
+                ctx.beginPath(); ctx.arc(-4, -30, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(4, -30, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(0, -25, 4, 0, Math.PI, true); ctx.stroke(); 
+                
+                // 雙手抱頭
+                ctx.strokeStyle = '#f1c27d'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(-15, -25); ctx.lineTo(-8, -35); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(10, -10); ctx.lineTo(15, -25); ctx.lineTo(8, -35); ctx.stroke();
+            } else {
+                // 開心的眼睛和笑臉
+                ctx.beginPath(); ctx.arc(-4, -30, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(4, -30, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(0, -26, 4, 0, Math.PI, false); ctx.stroke(); 
+                
+                // 拍手歡呼動畫
+                let clap = Math.sin(frameCount * 0.3) * 5;
+                ctx.strokeStyle = '#f1c27d'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(-5 + clap, -15); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(10, -10); ctx.lineTo(5 - clap, -15); ctx.stroke();
+                
+                // 開心符號 (撒花效果)
+                ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(-15, -40); ctx.lineTo(-20, -45); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(15, -40); ctx.lineTo(20, -45); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, -45); ctx.lineTo(0, -52); ctx.stroke();
+            }
+
+            ctx.restore();
+        });
+    }
+
     // --- 繪製精美校園場景 ---
     function drawSchool(remaining) {
-        // 天空與草地底色
         ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, canvas.width, 250);
         ctx.fillStyle = '#7CFC00'; ctx.fillRect(0, 250, canvas.width, canvas.height - 250);
 
-        // 學校大樓
         ctx.fillStyle = '#E6E6FA'; ctx.fillRect(200, 50, 800, 200);
-        ctx.fillStyle = '#CD5C5C'; ctx.fillRect(180, 30, 840, 40); // 屋頂
+        ctx.fillStyle = '#CD5C5C'; ctx.fillRect(180, 30, 840, 40); 
         
-        // 時鐘塔
         ctx.fillStyle = '#FFD700'; ctx.beginPath(); ctx.arc(600, 100, 30, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = '#333'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(600, 100, 30, 0, Math.PI*2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(600, 100); ctx.lineTo(600, 80); ctx.moveTo(600, 100); ctx.lineTo(615, 100); ctx.stroke();
 
-        // 窗戶 (透出燈光)
         ctx.fillStyle = '#FFFACD';
         for(let x=250; x<=850; x+=150) {
             if(x===550) continue; 
@@ -262,18 +357,16 @@
             ctx.beginPath(); ctx.moveTo(x+30, 100); ctx.lineTo(x+30, 150); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(x+30, 170); ctx.lineTo(x+30, 220); ctx.stroke();
         }
-        // 學校大門
         ctx.fillStyle = '#8B4513'; ctx.fillRect(550, 150, 100, 100);
 
-        // 操場/籃球場線條
         ctx.strokeStyle = '#FFF'; ctx.lineWidth = 5;
-        ctx.strokeRect(150, 300, 900, 400); // 外框
-        ctx.beginPath(); ctx.moveTo(600, 300); ctx.lineTo(600, 700); ctx.stroke(); // 中線
-        ctx.beginPath(); ctx.arc(600, 500, 80, 0, Math.PI*2); ctx.stroke(); // 中圈
+        ctx.strokeRect(150, 300, 900, 400); 
+        ctx.beginPath(); ctx.moveTo(600, 300); ctx.lineTo(600, 700); ctx.stroke(); 
+        ctx.beginPath(); ctx.arc(600, 500, 80, 0, Math.PI*2); ctx.stroke(); 
 
-        // 黑暗濾鏡 (根據怪獸數量減少而變亮)
+        // 黑暗濾鏡
         if(remaining > 0) {
-            ctx.fillStyle = `rgba(10, 10, 30, ${0.1 + remaining * 0.15})`;
+            ctx.fillStyle = `rgba(10, 10, 30, ${0.05 + remaining * 0.08})`; // 調整了黑暗程度適應10隻怪獸
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
@@ -281,41 +374,34 @@
     // --- 繪製精美裝甲騎士 ---
     function drawKnight(x, y, facingRight) {
         ctx.save(); ctx.translate(x, y);
-        if(!facingRight) ctx.scale(-1, 1); // 轉向
+        if(!facingRight) ctx.scale(-1, 1);
 
-        // 盾牌 (左手)
         ctx.fillStyle = '#2980b9';
         ctx.beginPath(); ctx.moveTo(5, -10); ctx.lineTo(25, -10); ctx.lineTo(25, 15);
         ctx.arcTo(15, 30, 5, 15, 15); ctx.fill();
         ctx.strokeStyle = '#f1c40f'; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = '#f1c40f'; ctx.fillRect(13, -5, 4, 20); ctx.fillRect(7, 3, 16, 4); // 盾牌十字
+        ctx.fillStyle = '#f1c40f'; ctx.fillRect(13, -5, 4, 20); ctx.fillRect(7, 3, 16, 4);
 
-        // 盔甲身體
         ctx.fillStyle = '#95a5a6'; ctx.fillRect(-15, -10, 30, 35);
-        ctx.fillStyle = '#7f8c8d'; ctx.fillRect(-15, 20, 30, 5); // 腰帶
+        ctx.fillStyle = '#7f8c8d'; ctx.fillRect(-15, 20, 30, 5); 
 
-        // 腿部
         ctx.fillStyle = '#7f8c8d'; ctx.fillRect(-10, 25, 8, 15); ctx.fillRect(2, 25, 8, 15);
 
-        // 鋼鐵頭盔
         ctx.fillStyle = '#bdc3c7';
         ctx.beginPath(); ctx.arc(0, -20, 18, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#e74c3c'; // 紅色盔纓
+        ctx.fillStyle = '#e74c3c'; 
         ctx.beginPath(); ctx.moveTo(-5, -38); ctx.quadraticCurveTo(-20, -50, -30, -30); ctx.lineTo(-10, -30); ctx.fill();
-        // 面罩眼睛
         ctx.fillStyle = '#2c3e50'; ctx.fillRect(0, -25, 15, 6); ctx.fillRect(0, -17, 12, 4);
 
-        // 騎士長劍 (右手)
         ctx.save();
-        // 如果正在播放攻擊動畫，讓劍揮舞起來
         if(gameState === 'animating' && animType === 'playerAttack') {
             ctx.translate(-5, 5); ctx.rotate(Math.PI / 4 + (animTimer * 0.1));
         } else {
             ctx.translate(-5, 5); ctx.rotate(Math.PI / 4);
         }
-        ctx.fillStyle = '#f1c40f'; ctx.fillRect(-4, -15, 8, 5); // 護手
-        ctx.fillStyle = '#ecf0f1'; ctx.fillRect(-2, -50, 4, 35); // 銀色劍刃
-        ctx.beginPath(); ctx.moveTo(-2, -50); ctx.lineTo(0, -60); ctx.lineTo(2, -50); ctx.fill(); // 尖端
+        ctx.fillStyle = '#f1c40f'; ctx.fillRect(-4, -15, 8, 5);
+        ctx.fillStyle = '#ecf0f1'; ctx.fillRect(-2, -50, 4, 35); 
+        ctx.beginPath(); ctx.moveTo(-2, -50); ctx.lineTo(0, -60); ctx.lineTo(2, -50); ctx.fill(); 
         ctx.restore();
 
         ctx.restore();
@@ -327,7 +413,6 @@
             if(!m.active) return;
             ctx.save(); ctx.translate(m.x, m.y);
             
-            // 飄浮動畫
             let floatY = Math.sin(Date.now() / 200 + m.x) * 5;
             ctx.translate(0, floatY);
 
@@ -336,16 +421,14 @@
             ctx.beginPath(); ctx.arc(-15, -10, 8, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.arc(10, -15, 6, 0, Math.PI*2); ctx.fill();
             
-            // 凶猛表情
             ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-10, -5, 5, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.arc(10, -5, 5, 0, Math.PI*2); ctx.fill();
             ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(-10, -5, 2, 0, Math.PI*2); ctx.fill(); 
 
             ctx.lineWidth = 3; ctx.strokeStyle = '#000';
-            ctx.beginPath(); ctx.moveTo(-20, -15); ctx.lineTo(-5, -8); ctx.stroke(); // 倒八眉
+            ctx.beginPath(); ctx.moveTo(-20, -15); ctx.lineTo(-5, -8); ctx.stroke(); 
             ctx.beginPath(); ctx.moveTo(20, -15); ctx.lineTo(5, -8); ctx.stroke();
 
-            // 尖牙大嘴
             ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, 10, 18, 0, Math.PI, false); ctx.fill();
             ctx.fillStyle = '#fff'; ctx.beginPath();
             ctx.moveTo(-18, 10); ctx.lineTo(-12, 20); ctx.lineTo(-6, 10);
@@ -361,7 +444,6 @@
             if(m.active) {
                 let dx = player.x - m.x; let dy = player.y - m.y;
                 if(Math.sqrt(dx*dx + dy*dy) < player.size + m.size) {
-                    // 發生碰撞，暫停移動並觸發對話
                     triggerQuestion(i); 
                     break;
                 }
@@ -369,15 +451,10 @@
         }
     }
 
-    // --- 觸發與作答邏輯 ---
     function triggerQuestion(index) {
         gameState = 'dialog';
         currentMonsterIndex = index; selectedOptionIndex = -1;
-        
-        // 確保騎士面向怪獸
         player.facingRight = (monsters[index].x > player.x);
-        
-        // 將玩家稍微推開一點點，避免關閉視窗後立刻又碰撞
         player.x += player.facingRight ? -10 : 10;
 
         const qData = questions[monsters[index].qIndex];
@@ -415,14 +492,12 @@
             animType = 'monsterAttack';
         }
 
-        // 顯示回饋 2.5 秒後關閉視窗，開始播放戰鬥動畫
         setTimeout(() => {
             document.getElementById('dialog-screen').classList.add('hidden');
             startAnimation(); 
         }, 2500);
     }
 
-    // --- 戰鬥動畫系統 ---
     function startAnimation() {
         gameState = 'animating';
         animTimer = 0;
@@ -433,28 +508,20 @@
     function drawCombatAnimation() {
         const target = monsters[currentMonsterIndex];
         
-        // 攻擊動畫 (玩家發射劍氣)
         if(animType === 'playerAttack') {
             ctx.save();
             ctx.translate(target.x, target.y);
-            let radius = animTimer * 2.5; // 劍氣擴散
-            ctx.strokeStyle = `rgba(241, 196, 15, ${1 - animTimer/animMax})`; // 金色劍氣漸隱
+            let radius = animTimer * 2.5; 
+            ctx.strokeStyle = `rgba(241, 196, 15, ${1 - animTimer/animMax})`; 
             ctx.lineWidth = 20;
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
-            ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2); ctx.stroke();
             ctx.restore();
-        } 
-        // 受傷動畫 (怪獸爪擊)
-        else if(animType === 'monsterAttack') {
-            // 畫面閃紅光
+        } else if(animType === 'monsterAttack') {
             ctx.fillStyle = `rgba(231, 76, 60, ${0.4 * Math.sin(animTimer/3)})`;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // 巨大的紅色爪痕
             ctx.strokeStyle = `rgba(192, 57, 43, ${1 - animTimer/animMax})`;
-            ctx.lineWidth = 15;
-            ctx.lineCap = 'round';
+            ctx.lineWidth = 15; ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(player.x - 40 + animTimer*2, player.y - 40 + animTimer*2);
             ctx.lineTo(player.x + 20 + animTimer*2, player.y + 20 + animTimer*2);
@@ -465,24 +532,31 @@
 
         animTimer++;
         if(animTimer >= animMax) {
-            // 動畫結束，結算分數
             if(animType === 'playerAttack') {
                 target.active = false; score++;
             } else {
                 hp--; 
-                // 將怪獸彈開一段距離，防止連續觸發受傷
                 target.x += (player.facingRight ? 80 : -80); 
             }
-            updateUI();
-            if(gameState !== 'end') gameState = 'playing';
+            
+            updateUI(); 
+
+            // 在動畫徹底結束時，才判斷並觸發結算畫面！
+            const remaining = monsters.filter(m => m.active).length;
+            if (remaining === 0) {
+                endGame(true);
+            } else if (hp <= 0) {
+                endGame(false);
+            } else {
+                gameState = 'playing';
+            }
         }
     }
 
-    // --- 常駐主遊戲迴圈 (Always-on Rendering) ---
     function gameLoop() {
+        frameCount++;
         let shakeX = 0, shakeY = 0;
         
-        // 處理受傷時的畫面強烈震動
         if(gameState === 'animating' && animType === 'monsterAttack') {
             shakeX = (Math.random() - 0.5) * 20; shakeY = (Math.random() - 0.5) * 20;
         }
@@ -491,33 +565,31 @@
         ctx.translate(shakeX, shakeY);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 1. 無論什麼狀態，都必須畫出背景、怪獸和騎士
-        drawSchool(monsters.filter(m => m.active).length);
+        const remaining = monsters.filter(m => m.active).length;
+        drawSchool(remaining);
+        
+        // 判斷是否所有怪獸都被消滅了？如果是，NPC就會歡呼！
+        drawNPCs(remaining > 0);
+        
         drawMonsters();
         drawKnight(player.x, player.y, player.facingRight);
         
-        // 2. 如果正在播放動畫，畫出特效
-        if(gameState === 'animating') {
-            drawCombatAnimation();
-        }
+        if(gameState === 'animating') drawCombatAnimation();
 
         ctx.restore();
 
-        // 3. 只有在 'playing' 狀態下才允許移動和偵測碰撞
         if(gameState === 'playing') {
             if(keys.w || keys.ArrowUp) player.y -= player.speed;
             if(keys.s || keys.ArrowDown) player.y += player.speed;
             if(keys.a || keys.ArrowLeft) { player.x -= player.speed; player.facingRight = false; }
             if(keys.d || keys.ArrowRight) { player.x += player.speed; player.facingRight = true; }
             
-            // 限制邊界在操場內
             player.x = Math.max(160, Math.min(1040, player.x));
             player.y = Math.max(310, Math.min(690, player.y));
             
             checkCollisions();
         }
 
-        // 不斷呼叫自己，保持引擎運作
         requestAnimationFrame(gameLoop);
     }
 </script>
